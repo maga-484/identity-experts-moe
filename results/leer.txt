@@ -1,0 +1,6 @@
+📈 Visualización de resultados
+https://results/figure_baseline.png
+*Comparación Experto vs Denso - 10/10 victorias*
+
+https://results/figure_cambio_numerico.png
+Evolución durante EDE con EWC
