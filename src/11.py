@@ -7,14 +7,24 @@ import random
 from copy import deepcopy
 
 # ------------------------------------------------------------
-# 1. Configuración
+# FUNCIONES DE ID JERÁRQUICO REAL (a.b.c.d.e.f.g.h)
 # ------------------------------------------------------------
-HASH_SPACE_SIZE = 40320
+def hash_jerarquico(a, b, c, d, e, f, g, h):
+    return (a * (100**7) + b * (100**6) + c * (100**5) + d * (100**4) + 
+            e * (100**3) + f * (100**2) + g * 100 + h)
 
-def simple_hash(vector):
-    h = int(torch.sum(torch.abs(vector)).item()) % HASH_SPACE_SIZE
-    return h
+def id_a_componentes(id_str):
+    partes = id_str.split('.')
+    return (int(partes[0]), int(partes[1]), int(partes[2]), int(partes[3]),
+            int(partes[4]), int(partes[5]), int(partes[6]), int(partes[7]))
 
+def id_a_hash(id_str):
+    a,b,c,d,e,f,g,h = id_a_componentes(id_str)
+    return hash_jerarquico(a,b,c,d,e,f,g,h)
+
+# ------------------------------------------------------------
+# Experto Identitario
+# ------------------------------------------------------------
 class IdentityExpert(nn.Module):
     def __init__(self, input_dim=32, hidden_dim=128, output_dim=32):
         super().__init__()
@@ -31,92 +41,63 @@ class IdentityExpert(nn.Module):
         return self.net(x)
 
 # ------------------------------------------------------------
-# 2. GENERACIÓN CON CAMBIO GRADUAL (NUMÉRICO, NO ESTRUCTURAL)
+# Generar datos
 # ------------------------------------------------------------
-def generate_silo_data_gradual(seed, n_samples=500, input_dim=32, output_dim=32, 
-                                base_shift=0.0, variation=0.05):
-    """
-    Genera datos con CAMBIO NUMÉRICO GRADUAL.
-    
-    Parámetros:
-    - base_shift: desplazamiento numérico desde la base (0 = igual a base)
-    - variation: ruido individual del silo (0 = idéntico a base)
-    
-    A diferencia de la versión anterior, TODOS los silos comparten la MISMA
-    estructura subyacente (W_base), solo cambian numéricamente por desplazamiento.
-    """
+def generate_silo_data(seed, n_samples=500, input_dim=32, output_dim=32, variation=0.1):
     torch.manual_seed(seed)
     X = torch.randn(n_samples, input_dim)
-    
-    # --- Base común FIJA para TODOS los silos (estructura compartida) ---
-    torch.manual_seed(42)  # Semilla fija para reproducibilidad
+    torch.manual_seed(42)
     W_base = torch.randn(input_dim, output_dim) * 0.8
-    
-    # --- Cambio NUMÉRICO (desplazamiento, no nueva matriz) ---
-    # Esto es: W = W_base + shift * I (desplazamiento uniforme)
-    shift_matrix = base_shift * torch.eye(input_dim, output_dim) * 0.5
-    
-    # --- Variación individual del silo (pequeña) ---
     torch.manual_seed(seed)
     W_variation = torch.randn(input_dim, output_dim) * variation
-    
-    # Matriz final = base + desplazamiento + pequeña variación
-    W = W_base + shift_matrix + W_variation
-    
+    W = W_base + W_variation
     y = torch.mm(X, W) + torch.randn(n_samples, output_dim) * 0.05
-    
-    # Normalizar
     y_mean = y.mean(dim=0, keepdim=True)
     y_std = y.std(dim=0, keepdim=True) + 1e-8
     y = (y - y_mean) / y_std
-    
     X_mean = X.mean(dim=0, keepdim=True)
     X_std = X.std(dim=0, keepdim=True) + 1e-8
     X = (X - X_mean) / X_std
-    
-    return X, y, W  # Retornamos W para diagnóstico
+    return X, y
 
-# ------------------------------------------------------------
-# 3. Generar 100 silos con desplazamiento progresivo (cambio gradual)
-# ------------------------------------------------------------
+# Crear 100 silos
 num_silos = 100
 silos_data = {}
-silos_weights = {}
-
-print(f"Generando {num_silos} silos con cambio NUMÉRICO GRADUAL...")
+print(f"Generando {num_silos} silos con variación suave...")
 for i in range(num_silos):
     sid = f"silo_{i}"
-    # Desplazamiento progresivo: de 0.0 a 0.5
-    base_shift = (i / num_silos) * 0.5
-    # Variación pequeña constante
-    variation = 0.02
-    
-    X, y, W = generate_silo_data_gradual(seed=1000+i, n_samples=500, 
-                                          base_shift=base_shift, variation=variation)
+    variation = 0.05 + (i / num_silos) * 0.1
+    X, y = generate_silo_data(seed=1000+i, n_samples=500, variation=variation)
     silos_data[sid] = (X, y)
-    silos_weights[sid] = W
 
-print(f"✓ Generados {len(silos_data)} silos con cambio numérico progresivo")
+print(f"✓ Generados {len(silos_data)} silos")
 
 # ------------------------------------------------------------
-# 4. Asignación de hash
+# Asignación de hash con ID JERÁRQUICO REAL (CORREGIDO)
 # ------------------------------------------------------------
 hash_map = {}
 expert_by_sid = {}
+random.seed(42)
 
-for sid, (X, y) in silos_data.items():
-    sample = X[:10].mean(dim=0)
-    h = simple_hash(sample)
-    while h in hash_map:
-        h = (h + 1) % HASH_SPACE_SIZE
+for idx, (sid, (X, y)) in enumerate(silos_data.items()):
+    a = idx % 1000
+    b = (idx * 7) % 100
+    c = (idx * 13) % 100
+    d = (idx * 17) % 100
+    e = (idx * 19) % 100
+    f = (idx * 23) % 100
+    g = (idx * 29) % 100
+    h = (idx * 31) % 100
+    id_str = f"{a:03d}.{b:02d}.{c:02d}.{d:02d}.{e:02d}.{f:02d}.{g:02d}.{h:02d}"
+    h_val = id_a_hash(id_str)
     expert = IdentityExpert()
-    hash_map[h] = expert
-    expert_by_sid[sid] = (h, expert)
+    hash_map[h_val] = expert
+    expert_by_sid[sid] = (h_val, expert, id_str)
 
 print(f"Asignados {len(hash_map)} hashes únicos")
 
 # ------------------------------------------------------------
-# 5. Entrenamiento de expertos (primeros 10)
+# Entrenamiento
 # ------------------------------------------------------------
 def train_expert(expert, X, y, epochs=80, lr=0.001):
     optimizer = optim.Adam(expert.parameters(), lr=lr)
@@ -134,13 +115,13 @@ def train_expert(expert, X, y, epochs=80, lr=0.001):
 print("\n--- Entrenando expertos (primeros 10 silos) ---")
 for i in range(10):
     sid = f"silo_{i}"
-    h, expert = expert_by_sid[sid]
+    h, expert, id_str = expert_by_sid[sid]
     X, y = silos_data[sid]
     train_expert(expert, X, y)
-    print(f"{sid} (hash={h}, shift={silos_weights[sid][0,0].item():.3f}): entrenado")
+    print(f"{sid} (ID={id_str}, hash={h}): entrenado")
 
 # ------------------------------------------------------------
-# 6. Modelo denso (con 10 silos mezclados)
+# Modelo denso
 # ------------------------------------------------------------
 all_X = torch.cat([silos_data[f"silo_{i}"][0] for i in range(10)])
 all_y = torch.cat([silos_data[f"silo_{i}"][1] for i in range(10)])
@@ -149,14 +130,14 @@ train_expert(dense_model, all_X, all_y, epochs=80)
 print("Modelo denso entrenado")
 
 # ------------------------------------------------------------
-# 7. Evaluación comparativa
+# Evaluación
 # ------------------------------------------------------------
 loss_fn = nn.MSELoss()
 print("\n--- Evaluación (primeros 10 silos) ---")
 expert_wins = 0
 for i in range(10):
     sid = f"silo_{i}"
-    h, expert = expert_by_sid[sid]
+    h, expert, _ = expert_by_sid[sid]
     X, y = silos_data[sid]
     with torch.no_grad():
         loss_exp = loss_fn(expert(X), y).item()
@@ -169,26 +150,18 @@ for i in range(10):
 
 print(f"\n📊 Experto gana en {expert_wins}/10 silos")
 
+# ------------------------------------------------------------
+# EDE con EWC (versión estable)
+# ------------------------------------------------------------
 def euler_heun_ewc(expert, X_new, y_new, X_old, y_old,
-                   steps=60, dt=0.002, sigma=0.01,
-                   ewc_lambda=5.0, replay_weight=0.2):
-    """
-    EDE con Elastic Weight Consolidation para cambio numérico gradual.
-    
-    Parámetros:
-    - steps: número de pasos de EDE
-    - dt: paso de tiempo
-    - sigma: intensidad del ruido
-    - ewc_lambda: fuerza de conservación (mayor = más preservación de antiguos)
-    - replay_weight: peso del gradiente de datos antiguos
-    """
+                   steps=40, dt=0.003, sigma=0.03,
+                   ewc_lambda=25.0):
     expert.train()
     loss_fn = nn.MSELoss()
     history_new = []
     history_old = []
     
-    # Calcular Fisher Information (importancia de pesos)
-    print("  Calculando matriz de Fisher...")
+    print("  Calculando matriz de Fisher (importancia)...")
     fisher = []
     with torch.no_grad():
         for p in expert.parameters():
@@ -209,54 +182,47 @@ def euler_heun_ewc(expert, X_new, y_new, X_old, y_old,
                 fisher[idx] += p.grad.data ** 2 / 10.0
     
     for step in range(steps):
-        # --- Gradiente nuevos datos ---
+        # Gradiente nuevos datos
         pred_new = expert(X_new)
         loss_new = loss_fn(pred_new, y_new)
         grad_new = torch.autograd.grad(loss_new, expert.parameters(), create_graph=False)
         
-        # --- Término EWC (preserva pesos importantes) ---
+        # Término EWC
         grad_ewc = []
         for idx, (p, f) in enumerate(zip(expert.parameters(), fisher)):
-            # CORREGIDO: usar ewc_lambda correctamente
             ewc_grad = ewc_lambda * f * (p - p.data)
             grad_ewc.append(ewc_grad)
         
-        # --- Gradiente datos antiguos (replay) ---
+        # Gradiente antiguos
         pred_old = expert(X_old[:batch_size])
         loss_old = loss_fn(pred_old, y_old[:batch_size])
         grad_old = torch.autograd.grad(loss_old, expert.parameters(), create_graph=False)
         
-        # --- Combinar gradientes (CORREGIDO: usar parámetros) ---
+        # Combinar
         grad_combined = []
         for gn, ge, go in zip(grad_new, grad_ewc, grad_old):
-            grad_combined.append(gn + replay_weight * go + ge)
+            grad_combined.append(gn + 0.3 * go + ge)
         
-        # --- Ruido Stratonovich ---
+        # Ruido
         ruido = [torch.randn_like(p) * sigma * (dt**0.5) for p in expert.parameters()]
         estado_inicial = [p.clone() for p in expert.parameters()]
         
-        # --- Predictor (Euler explícito) ---
+        # Predictor
         with torch.no_grad():
             for p, g, n in zip(expert.parameters(), grad_combined, ruido):
                 p.add_(-dt * g + n)
         
-        # --- Gradiente en el predictor ---
+        # Corrector
         pred_pred = expert(X_new)
         loss_pred = loss_fn(pred_pred, y_new)
         grad_pred = torch.autograd.grad(loss_pred, expert.parameters(), create_graph=False)
         
-        # --- Corrector (promedio de drifts) ---
         with torch.no_grad():
-            # Restaurar estado inicial
             for p, p0 in zip(expert.parameters(), estado_inicial):
                 p.data = p0.data
-            
-            # Actualizar con gradiente promedio
             for p, g1, g2, n in zip(expert.parameters(), grad_combined, grad_pred, ruido):
-                drift_avg = (g1 + g2) / 2.0
-                p.add_(-dt * drift_avg + n)
+                p.add_(-dt * ((g1 + g2) / 2.0) + n)
         
-        # Registrar evolución
         with torch.no_grad():
             history_new.append(loss_fn(expert(X_new), y_new).item())
             history_old.append(loss_fn(expert(X_old[:batch_size]), y_old[:batch_size]).item())
@@ -264,95 +230,80 @@ def euler_heun_ewc(expert, X_new, y_new, X_old, y_old,
     return history_new, history_old
 
 # ------------------------------------------------------------
-# 9. Prueba de cambio NUMÉRICO GRADUAL
+# Prueba con EWC
 # ------------------------------------------------------------
 print("\n" + "="*60)
-print("PRUEBA DE CAMBIO NUMÉRICO GRADUAL CON EWC")
+print("PRUEBA DE CAMBIO SUAVE CON EWC")
 print("="*60)
 
 silo_prueba = "silo_0"
-h0, expert0 = expert_by_sid[silo_prueba]
-expert0_original = deepcopy(expert0)
-
+h0, expert0, id_str0 = expert_by_sid[silo_prueba]
 X_old, y_old = silos_data[silo_prueba]
-
-# Datos nuevos: MISMA estructura, pero con desplazamiento numérico pequeño
-# El silo_0 original tiene base_shift=0.0 (porque i=0)
-# Los nuevos datos tienen base_shift=0.15 (cambio numérico, no estructural)
-X_new, y_new, W_new = generate_silo_data_gradual(seed=9999, n_samples=500,
-                                                  base_shift=0.15, variation=0.02)
+X_new, y_new = generate_silo_data(seed=9999, n_samples=500, variation=0.3)
 
 with torch.no_grad():
     loss_old_before = loss_fn(expert0(X_old), y_old).item()
     loss_new_before = loss_fn(expert0(X_new), y_new).item()
-print(f"\nDesplazamiento numérico: 0.00 → 0.15")
 print(f"Antes EDE - Antiguos: {loss_old_before:.4f} | Nuevos: {loss_new_before:.4f}")
 
-print("\nAplicando EDE con EWC (cambio numérico gradual)...")
+print("\nAplicando EDE con EWC (Stratonovich)...")
 history_new, history_old = euler_heun_ewc(
     expert0, X_new, y_new, X_old, y_old,
-    steps=40, dt=0.003, sigma=0.02,
-    ewc_lambda=8.0  # Menor conservación porque el cambio es pequeño
+    steps=40, dt=0.003, sigma=0.03,
+    ewc_lambda=25.0
 )
 
 with torch.no_grad():
     loss_old_after = loss_fn(expert0(X_old), y_old).item()
     loss_new_after = loss_fn(expert0(X_new), y_new).item()
 
-print(f"\n--- Resultados con cambio NUMÉRICO GRADUAL ---")
+print(f"\n--- Resultados con EWC (λ=25.0) ---")
 print(f"Antiguos: {loss_old_before:.4f} → {loss_old_after:.4f} (variación {(loss_old_after/loss_old_before - 1)*100:.1f}%)")
 print(f"Nuevos:   {loss_new_before:.4f} → {loss_new_after:.4f} (mejora {(loss_new_before-loss_new_after)/loss_new_before*100:.1f}%)")
 
-if loss_old_after < loss_old_before * 1.05:
-    print("✓ ¡ÉXITO! Olvido insignificante (<5%)")
-elif loss_old_after < loss_old_before * 1.10:
-    print("✓ Olvido aceptable (<10%)")
-elif loss_old_after < loss_old_before * 1.20:
+if loss_old_after < loss_old_before * 1.1:
+    print("✓ Sin olvido catastrófico (<10%)")
+elif loss_old_after < loss_old_before * 1.2:
     print("⚠️ Olvido moderado (10-20%)")
 else:
     print("✗ Olvido significativo (>20%)")
 
 if loss_new_after < loss_new_before:
-    print(f"✓ Mejora en nuevos datos: {(loss_new_before-loss_new_after)/loss_new_before*100:.1f}%")
+    print(f"✓ Mejora real en nuevos datos: {(loss_new_before-loss_new_after)/loss_new_before*100:.1f}%")
 else:
-    print(f"✗ No hubo mejora en nuevos datos")
+    print(f"✗ No hubo mejora")
 
 # ------------------------------------------------------------
-# 10. Visualización
+# Visualización
 # ------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
 axes[0].plot(history_new, marker='o', markersize=3, color='green', label='Nuevos datos')
-axes[0].plot(history_old, marker='s', markersize=3, color='blue', label='Antiguos datos (replay)')
+axes[0].plot(history_old, marker='s', markersize=3, color='blue', label='Antiguos (replay)')
 axes[0].set_xlabel('Paso EDE')
 axes[0].set_ylabel('Pérdida MSE')
-axes[0].set_title('Evolución durante EDE - Cambio Numérico Gradual')
+axes[0].set_title('Evolución con EWC')
 axes[0].legend()
 axes[0].grid(True)
 
 axes[1].bar(['Antiguos', 'Nuevos'], 
-            [loss_old_before, loss_new_before], width=0.35, label='Antes EDE', color='red', alpha=0.7)
+            [loss_old_before, loss_new_before], width=0.35, label='Antes', color='red', alpha=0.7)
 axes[1].bar(['Antiguos', 'Nuevos'], 
-            [loss_old_after, loss_new_after], width=0.35, label='Después EDE', color='green', alpha=0.7)
+            [loss_old_after, loss_new_after], width=0.35, label='Después', color='green', alpha=0.7)
 axes[1].set_ylabel('Pérdida MSE')
-axes[1].set_title('Efecto - Cambio Numérico Gradual')
+axes[1].set_title('Efecto de EWC')
 axes[1].legend()
 axes[1].grid(True)
 
 plt.tight_layout()
 plt.show()
 
-# ------------------------------------------------------------
-# 11. Resumen final
-# ------------------------------------------------------------
 print("\n" + "="*60)
-print("RESUMEN FINAL - CAMBIO NUMÉRICO GRADUAL")
+print("RESUMEN - 11.py CORREGIDO (EWC)")
 print("="*60)
 print(f"✓ Silos generados: {num_silos}")
-print(f"✓ Espaço hash: {HASH_SPACE_SIZE} posiciones")
 print(f"✓ Expertos identitarios: {expert_wins}/10 victorias")
-print(f"✓ Tipo de cambio: Numérico gradual (desplazamiento 0.00 → 0.15)")
-print(f"✓ EWC aplicado con λ=8.0")
-print(f"✓ Olvido: {(loss_old_after/loss_old_before - 1)*100:.1f}%")
-print(f"✓ Mejora nuevos: {(loss_new_before-loss_new_after)/loss_new_before*100:.1f}%")
+print(f"✓ EWC aplicado con λ=25.0")
+print(f"✓ Antiguos: {loss_old_before:.4f} → {loss_old_after:.4f}")
+print(f"✓ Nuevos:   {loss_new_before:.4f} → {loss_new_after:.4f}")
 print("="*60)
