@@ -30,13 +30,35 @@ cd identity-experts-moe
 pip install -r requirements.txt
 ```
 
+## Live API
+
+The service is deployed and accessible at:
+
+- **Swagger UI:** https://identity-experts-moe-production.up.railway.app/docs
+- **Health check:** https://identity-experts-moe-production.up.railway.app/health
+
+## Quick Test
+
+```bash
+curl https://identity-experts-moe-production.up.railway.app/health
 ## Project Structure
+```
+
+## Expected response:
 
 ```
-docs/        # Technical documentation
-models/      # PyTorch model definitions
-results/     # Training metrics and benchmarks
-src/         # Core code (dataset, router, training)
+{"status": "ok", "model_loaded": false}
+
+```
+
+It's just documentation. It tells the reader, "If you run this command, you'll see this result." It's not a JSON file that exists in your repository. If you want to try it now, open PowerShell and run: ```bash curl https://identity-experts-moe-production.up.railway.app/health`
+
+```
+docs/ # Technical documentation
+models/ # PyTorch model definitions
+results/ # Training metrics and benchmarks
+src/ # Core code (dataset, router, training)
+
 ```
 
 ## Results
